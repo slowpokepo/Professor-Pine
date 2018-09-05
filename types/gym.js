@@ -3,7 +3,7 @@
 const log = require('loglevel').getLogger('GymSearch'),
   Commando = require('discord.js-commando'),
   {GymParameter} = require('../app/constants'),
-  Raid = require('../app/raid'),
+  PartyManager = require('../app/party-manager'),
   Gym = require('../app/gym');
 
 class GymType extends Commando.ArgumentType {
@@ -13,57 +13,55 @@ class GymType extends Commando.ArgumentType {
 
   async validate(value, message, arg) {
     try {
-      const name_only = !!arg.is_screenshot,
-        gyms = await Gym.search(message.channel.id, value.split(/\s/g), name_only);
+      const nameOnly = !!arg.isScreenshot,
+        channelName = await PartyManager.getCreationChannelName(message.channel.id),
+        results = await Gym.search(channelName, value.split(/\s/g), nameOnly);
 
-      if (!gyms || gyms.length === 0) {
-        const adjacent_gyms = await Gym.adjacentRegionsSearch(message.channel.id, value.split(/\s/g), name_only);
-
-        if (!adjacent_gyms) {
-          if (arg && !arg.is_screenshot) {
-            return `"${value}" returned no gyms.\n\nPlease try your search again, entering the text you want to search for.\n\n${arg.prompt}`;
-          } else {
-            return false;
-          }
-        }
-
-        const adjacent_gym_name = adjacent_gyms.gyms[0].nickname ?
-          adjacent_gyms.gyms[0].nickname :
-          adjacent_gyms.gyms[0].gymName,
-          adjacent_channel = message.channel.guild.channels
-            .find(channel => channel.name === adjacent_gyms.channel);
-
-        if (arg && !arg.is_screenshot) {
-          return `"${value}" returned no gyms; did you mean "${adjacent_gym_name}" over in ${adjacent_channel.toString()}?  ` +
-            `If so please cancel and use ${adjacent_channel.toString()} to try again.\n\n` +
-            `Please try your search again, entering only the text you want to search for.\n\n${arg.prompt}`;
+      if (results.length === 0) {
+        if (arg && !arg.isScreenshot) {
+          return `"${value}" returned no gyms.\n\nPlease try your search again, entering the text you want to search for.\n\n${arg.prompt}`;
         } else {
-          return `"${value}" returned no gyms; if the gym name was "${adjacent_gym_name}", try uploading your screenshot to the ${adjacent_channel.toString()} channel instead.`;
+          return false;
         }
       }
 
-      const gym_id = gyms[0].gymId;
+      const resultChannelName = results[0].channelName,
+        gym = results[0].gym,
+        gymName = gym.nickname ?
+          gym.nickname :
+          gym.gymName;
 
-      if (arg.key !== GymParameter.FAVORITE && Raid.raidExistsForGym(gym_id)) {
-        const raid = Raid.findRaid(gym_id),
-          gym_name = gyms[0].nickname ?
-            gyms[0].nickname :
-            gyms[0].gymName,
-          channel = (await Raid.getChannel(raid.channel_id)).channel;
+      if (resultChannelName !== channelName) {
+          const adjacentChannel = message.channel.guild.channels
+            .find(channel => channel.name === resultChannelName &&
+              channel.permissionsFor(message.client.user).has('VIEW_CHANNEL'));
 
-        if (arg && !arg.is_screenshot) {
-          return `"${gym_name}" already has an active raid - ${channel.toString()}.\n\n` +
+        if (adjacentChannel === undefined) {
+          return `${gymName} was found in #${adjacentChannel.toString()} but it doesn't exist or I can't access it.  Yell at the mods!`;
+        }
+
+        message.adjacent = {
+          channel: adjacentChannel,
+          gymName: gymName,
+          gymId: gym.gymId
+        };
+      }
+
+      if (arg.key !== GymParameter.FAVORITE && PartyManager.raidExistsForGym(gym.gymId)) {
+        const raid = PartyManager.findRaid(gym.gymId),
+          channel = (await PartyManager.getChannel(raid.channelId)).channel;
+
+        if (arg && !arg.isScreenshot) {
+          return `"${gymName}" already has an active raid - ${channel.toString()}.\n\n` +
             `If this is the raid you are referring to please cancel and use ${channel.toString()}; ` +
             `otherwise try your search again, entering the text you want to search for.\n\n${arg.prompt}`;
-        } else {
-          return `"${gym_name}" already has an active raid - ${channel.toString()}.`;
         }
       }
 
       return true;
     } catch (err) {
       log.error(err);
-      if (arg && !arg.is_screenshot) {
+      if (arg && !arg.isScreenshot) {
         return `Invalid search terms entered.\n\nPlease try your search again, entering the text you want to search for.\n\n${arg.prompt}`;
       } else {
         return false;
@@ -72,12 +70,18 @@ class GymType extends Commando.ArgumentType {
   }
 
   async parse(value, message, arg) {
-    const name_only = arg ?
-      arg.is_screenshot :
-      false,
-      gyms = await Gym.search(message.channel.id, value.split(/\s/g), name_only);
+    if (!!message.adjacent) {
+      // Validator already found gym in an adjacent channel
+      return message.adjacent.gymId;
+    }
 
-    return gyms[0].gymId;
+    const nameOnly = arg ?
+      arg.isScreenshot :
+      false,
+      channelName = await PartyManager.getCreationChannelName(message.channel.id),
+      results = await Gym.search(channelName, value.split(/\s/g), nameOnly);
+
+    return results[0].gym.gymId;
   }
 }
 

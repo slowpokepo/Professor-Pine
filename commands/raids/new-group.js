@@ -2,10 +2,10 @@
 
 const log = require('loglevel').getLogger('NewGroupCommand'),
   Commando = require('discord.js-commando'),
-  {CommandGroup, RaidStatus} = require('../../app/constants'),
+  {CommandGroup, PartyStatus} = require('../../app/constants'),
   Helper = require('../../app/helper'),
   Notify = require('../../app/notify'),
-  Raid = require('../../app/raid'),
+  PartyManager = require('../../app/party-manager'),
   settings = require('../../data/settings');
 
 class NewGroupCommand extends Commando.Command {
@@ -23,7 +23,7 @@ class NewGroupCommand extends Commando.Command {
 
     client.dispatcher.addInhibitor(message => {
       if (!!message.command && message.command.name === 'new' &&
-        !Raid.validRaid(message.channel.id)) {
+        !PartyManager.validParty(message.channel.id)) {
         return ['invalid-channel', message.reply('Create a new raid group for a raid from its raid channel!')];
       }
       return false;
@@ -31,28 +31,29 @@ class NewGroupCommand extends Commando.Command {
   }
 
   async run(message, args) {
-    const info = Raid.createGroup(message.channel.id, message.member.id);
+    const raid = PartyManager.getParty(message.channel.id),
+      info = await raid.createGroup(message.member.id);
 
     if (!info.error) {
-      message.react(Helper.getEmoji(settings.emoji.thumbs_up) || '👍')
+      message.react(Helper.getEmoji(settings.emoji.thumbsUp) || '👍')
         .catch(err => log.error(err));
 
       // notify all attendees of new group
-      const attendees = Object.entries(info.raid.attendees)
-        .filter(([attendee, attendee_status]) => attendee !== message.member.id &&
-          attendee_status.status !== RaidStatus.COMPLETE)
-        .map(([attendee, attendee_status]) => attendee);
+      const attendees = Object.entries(raid.attendees)
+        .filter(([attendee, attendeeStatus]) => attendee !== message.member.id &&
+          attendeeStatus.status !== PartyStatus.COMPLETE)
+        .map(([attendee, attendeeStatus]) => attendee);
 
       if (attendees.length > 0) {
         const members = (await Promise.all(attendees
-          .map(async attendee_id => await Raid.getMember(message.channel.id, attendee_id))))
+          .map(async attendeeId => await raid.getMember(attendeeId))))
           .filter(member => member.ok === true)
           .map(member => member.member);
 
         Notify.shout(message, members, `A new group has been created; if you wish to join it, type:\`\`\`${this.client.commandPrefix}group ${info.group}\`\`\``);
       }
 
-      Raid.refreshStatusMessages(info.raid);
+      raid.refreshStatusMessages();
     } else {
       message.reply(info.error)
         .catch(err => log.error(err));

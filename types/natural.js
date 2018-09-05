@@ -2,20 +2,23 @@
 
 const Commando = require('discord.js-commando');
 
+let PartyManager;
+
+process.nextTick(() => PartyManager = require('../app/party-manager'));
+
 class NaturalArgumentType extends Commando.ArgumentType {
   constructor(client) {
     super(client, 'natural');
   }
 
   validate(value, message, arg) {
-    const Raid = require('../app/raid'),
-      group_ids = Raid.getRaid(message.channel.id).groups
+    const groupIds = PartyManager.getParty(message.channel.id).groups
         .map(group => group.id),
-      group_id = value.trim().toUpperCase(),
-      valid_group = group_ids.includes(group_id) || group_id === 'A',
+      groupId = value.trim().toUpperCase(),
+      validGroup = groupIds.includes(groupId) || groupId === 'A',
       int = Number.parseInt(value);
 
-    if (valid_group) {
+    if (validGroup) {
       return `To join a group, type \`cancel\` and use the \`${message.client.commandPrefix}group\` command!\n\n${arg.prompt}`;
     }
 

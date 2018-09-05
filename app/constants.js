@@ -1,5 +1,6 @@
 const CommandGroup = {
   ADMIN: 'admin',
+  COMMANDS: 'commands',
   BASIC_RAID: 'basic-raid',
   RAID_CRUD: 'raid-crud',
   ROLES: 'roles',
@@ -11,13 +12,19 @@ const GymParameter = {
   FAVORITE: 'favorite'
 };
 
-const RaidStatus = {
+const PartyStatus = {
   NOT_INTERESTED: -1,
   INTERESTED: 0,
   COMING: 1,
   PRESENT: 2,
   COMPLETE_PENDING: 3,
   COMPLETE: 4
+};
+
+const PartyType = {
+  RAID: 'raid',
+  RAID_TRAIN: 'raid train',
+  MEETUP: 'meet-up'
 };
 
 const Team = {
@@ -39,4 +46,4 @@ const TimeParameter = {
   END: 'end'
 };
 
-module.exports = {CommandGroup, GymParameter, RaidStatus, Team, TimeMode, TimeParameter};
+module.exports = {CommandGroup, GymParameter, PartyStatus, PartyType, Team, TimeMode, TimeParameter};

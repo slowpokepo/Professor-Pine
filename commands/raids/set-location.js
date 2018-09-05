@@ -4,8 +4,9 @@ const log = require('loglevel').getLogger('LocationCommand'),
   Commando = require('discord.js-commando'),
   {CommandGroup} = require('../../app/constants'),
   Helper = require('../../app/helper'),
-  Raid = require('../../app/raid'),
-  settings = require('../../data/settings');
+  PartyManager = require('../../app/party-manager'),
+  settings = require('../../data/settings'),
+  Utility = require('../../app/utility');
 
 class SetLocationCommand extends Commando.Command {
   constructor(client) {
@@ -19,7 +20,7 @@ class SetLocationCommand extends Commando.Command {
       examples: ['\t!gym Unicorn', '\t!location \'Bellevue Park\'', '\t!location squirrel'],
       args: [
         {
-          key: 'gym_id',
+          key: 'gymId',
           label: 'gym',
           prompt: 'Where is the raid taking place?\nExample: `manor theater`\n',
           type: 'gym',
@@ -32,7 +33,7 @@ class SetLocationCommand extends Commando.Command {
 
     client.dispatcher.addInhibitor(message => {
       if (!!message.command && message.command.name === 'gym' &&
-        !Raid.validRaid(message.channel.id)) {
+        !PartyManager.validParty(message.channel.id)) {
         return ['invalid-channel', message.reply('Set the location of a raid from its raid channel!')];
       }
       return false;
@@ -40,18 +41,48 @@ class SetLocationCommand extends Commando.Command {
   }
 
   async run(message, args) {
-    const gym_id = args['gym_id'],
-      info = Raid.setRaidLocation(message.channel.id, gym_id);
+    const gymId = args['gymId'],
+      party = PartyManager.getParty(message.channel.id);
 
-    message.react(Helper.getEmoji(settings.emoji.thumbs_up) || '👍')
+    let channel = undefined;
+
+    if (!!message.adjacent) {
+      // Found gym is in an adjacent region
+      const confirmationCollector = new Commando.ArgumentCollector(message.client, [
+          {
+            key: 'confirm',
+            label: 'confirmation',
+            prompt: `${message.adjacent.gymName} was found in ${message.adjacent.channel.toString()}!  Should this raid be relocated there?\n`,
+            type: 'boolean'
+          }
+        ], 3),
+        confirmationResult = await confirmationCollector.obtain(message);
+
+      let confirmation = false;
+      Utility.cleanCollector(confirmationResult);
+
+      if (!confirmationResult.cancelled) {
+        confirmation = confirmationResult.values['confirm'];
+      }
+
+      if (!confirmation) {
+        return;
+      }
+
+      channel = message.adjacent.channel;
+    }
+
+    const info = await party.setRaidLocation(gymId, channel);
+
+    message.react(Helper.getEmoji(settings.emoji.thumbsUp) || '👍')
       .then(result => {
-        Helper.client.emit('raidGymSet', info.raid, message.member.id);
+        Helper.client.emit('raidGymSet', party, message.member.id);
 
         return true;
       })
       .catch(err => log.error(err));
 
-    Raid.refreshStatusMessages(info.raid);
+    party.refreshStatusMessages(!!message.adjacent);
   }
 }
 
